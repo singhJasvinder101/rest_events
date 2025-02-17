@@ -7,7 +7,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/singhJasvinder101/models"
-	"github.com/singhJasvinder101/utils"
 )
 
 func getEvents(context *gin.Context){
@@ -24,27 +23,11 @@ func getEvents(context *gin.Context){
 }
 
 func createEvent(c *gin.Context){
-    token := c.GetHeader("Authorization")
-
-    if token == "" {
-        c.JSON(http.StatusUnauthorized, gin.H{
-            "message": "Unauthorized",
-        })
-        return
-    }
-
-    userId, err := utils.VerifyToken(token)
-    if err != nil {
-        c.JSON(http.StatusUnauthorized, gin.H{
-            "message": "Unauthorized",
-        })
-        return
-    }
-    fmt.Println("Token verified")
+    fmt.Println("Token verified by middleware")
 
     var event models.Event
     // pointer of event variable is passed incoming req must be of same type
-    err = c.ShouldBindJSON(&event)
+    err := c.ShouldBindJSON(&event)
     if err != nil{
         c.JSON(http.StatusBadRequest, gin.H{
             "message": "Please enter the required fields",
@@ -52,6 +35,7 @@ func createEvent(c *gin.Context){
         return
     }
 
+    userId := c.GetInt64("userId")
     event.UserId = userId
 
     event.Save()
@@ -95,7 +79,30 @@ func getEventById(c *gin.Context){
 
 func deleteEventById(c *gin.Context){
 	id := c.Param("id")
-	err := models.DeleteEventById(id)
+
+    existingEvent, err := models.GetEventById(id)
+    if err != nil {
+        fmt.Println("Error fetching event:", err)
+        c.JSON(http.StatusBadRequest, gin.H{
+            "message": "Internal Server Error",
+            "error":   err.Error(),
+        })
+        return
+    }
+
+    userId := c.GetInt64("userId")
+
+    fmt.Println("Existing event:", existingEvent)
+    fmt.Println("User ID:", userId)
+
+    if existingEvent.UserId != userId {
+        c.JSON(http.StatusUnauthorized, gin.H{
+            "message": "Unauthorized",
+        })
+        return
+    }
+
+	err = models.DeleteEventById(id)
 	if err != nil {
 		fmt.Println("Error deleting event:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -112,27 +119,54 @@ func deleteEventById(c *gin.Context){
 
 func updateEventById(c *gin.Context) {
 	id := c.Param("id")
-	var event models.Event
-	err := c.ShouldBindJSON(&event)
+
+	// check if the existing event
+	existingEvent, err := models.GetEventById(id)
 	if err != nil {
-		fmt.Println("Error binding event:", err)
+		fmt.Println("Error fetching event:", err)
 		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "Event not found",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	// userId from middleware
+	userId := c.GetInt64("userId")
+
+	// Check if the user is the creator of the event
+	if existingEvent.UserId != userId {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"message": "Unauthorized: You can only update your own events",
+		})
+		return
+	}
+
+	parsedId, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		fmt.Println("Error parsing event ID:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
 			"message": "Internal Server Error",
 			"error":   err.Error(),
 		})
 		return
 	}
-    parsedId, err := strconv.ParseInt(id, 10, 64)
-    if err != nil {
-        fmt.Println("Error parsing event ID:", err)
-        c.JSON(http.StatusInternalServerError, gin.H{
-			"message": "Internal Server Error",
+
+	var updatedEvent models.Event
+	err = c.ShouldBindJSON(&updatedEvent)
+	if err != nil {
+		fmt.Println("Error binding event:", err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "Invalid request data",
 			"error":   err.Error(),
 		})
 		return
-    }
-    event.Id = parsedId
-	err = event.Update()
+	}
+
+	updatedEvent.Id = parsedId
+	updatedEvent.UserId = userId
+
+	err = updatedEvent.Update()
 	if err != nil {
 		fmt.Println("Error updating event:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -141,10 +175,11 @@ func updateEventById(c *gin.Context) {
 		})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Event updated",
-		"event":   event,
-	})
 
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Event updated successfully",
+		"event":   updatedEvent,
+	})
 }
+
 
