@@ -1,16 +1,150 @@
 package routes
 
-import "github.com/gin-gonic/gin"
+import (
+	"fmt"
+	"net/http"
+	"strconv"
 
-func RegisterRoutes(server *gin.Engine){
+	"github.com/gin-gonic/gin"
+	"github.com/singhJasvinder101/models"
+	"github.com/singhJasvinder101/utils"
+)
 
-	// part of same package so all lowercase
-	server.GET("/events", getEvents)
-	server.POST("/events", createEvent)
-	server.DELETE("/events", deleteAllEvents)
-	server.GET("/events/:id", getEventById)
-	server.DELETE("/events/:id", deleteEventById)
-	server.PUT("/events/:id", updateEventById)
+func getEvents(context *gin.Context){
+    events, err := models.GetallEvents()
+    if err != nil {
+        context.JSON(http.StatusInternalServerError, gin.H{
+            "message": "Internal Server Error",
+        })
+        return
+    }
+    context.JSON(http.StatusOK, gin.H{
+        "events": events,
+    })
 }
 
+func createEvent(c *gin.Context){
+    token := c.GetHeader("Authorization")
+
+    if token == "" {
+        c.JSON(http.StatusUnauthorized, gin.H{
+            "message": "Unauthorized",
+        })
+        return
+    }
+
+    userId, err := utils.VerifyToken(token)
+    if err != nil {
+        c.JSON(http.StatusUnauthorized, gin.H{
+            "message": "Unauthorized",
+        })
+        return
+    }
+    fmt.Println("Token verified")
+
+    var event models.Event
+    // pointer of event variable is passed incoming req must be of same type
+    err = c.ShouldBindJSON(&event)
+    if err != nil{
+        c.JSON(http.StatusBadRequest, gin.H{
+            "message": "Please enter the required fields",
+        })
+        return
+    }
+
+    event.UserId = userId
+
+    event.Save()
+
+    c.JSON(http.StatusCreated, gin.H{
+        "message": "Event Created!!", "event": event,
+    })
+}
+
+func deleteAllEvents(c *gin.Context) {
+    err := models.DeleteAllRows()
+    if err != nil {
+        fmt.Println("Error deleting events:", err)
+        c.JSON(http.StatusInternalServerError, gin.H{
+            "message": "Internal Server Error",
+            "error":   err.Error(),
+        })
+        return
+    }
+    c.JSON(http.StatusOK, gin.H{
+        "message": "All events deleted",
+    })
+}
+
+func getEventById(c *gin.Context){
+    id := c.Param("id")
+    event, err := models.GetEventById(id)
+    if err != nil {
+        fmt.Println("Error fetching event:", err)
+        c.JSON(http.StatusBadRequest, gin.H{
+            "message": "Internal Server Error",
+            "error":   err.Error(),
+        })
+        return
+    }
+    c.JSON(http.StatusOK, gin.H{
+        "event": event,
+    })
+}
+
+
+func deleteEventById(c *gin.Context){
+	id := c.Param("id")
+	err := models.DeleteEventById(id)
+	if err != nil {
+		fmt.Println("Error deleting event:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"message": "Internal Server Error",
+			"error":   err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Event deleted",
+	})
+}
+
+
+func updateEventById(c *gin.Context) {
+	id := c.Param("id")
+	var event models.Event
+	err := c.ShouldBindJSON(&event)
+	if err != nil {
+		fmt.Println("Error binding event:", err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "Internal Server Error",
+			"error":   err.Error(),
+		})
+		return
+	}
+    parsedId, err := strconv.ParseInt(id, 10, 64)
+    if err != nil {
+        fmt.Println("Error parsing event ID:", err)
+        c.JSON(http.StatusInternalServerError, gin.H{
+			"message": "Internal Server Error",
+			"error":   err.Error(),
+		})
+		return
+    }
+    event.Id = parsedId
+	err = event.Update()
+	if err != nil {
+		fmt.Println("Error updating event:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"message": "Internal Server Error",
+			"error":   err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Event updated",
+		"event":   event,
+	})
+
+}
 

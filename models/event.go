@@ -13,11 +13,11 @@ type Event struct {
 	Description string	`binding:"required"`
 	Location string		`binding:"required"`
 	DateTime time.Time
-	UserId int	//creator of event
+	UserId int64	//creator of event
 }
 
 
-func (e Event) Save() error{
+func (e *Event) Save() error {
 	query := `INSERT INTO events 
 	(title, description, location, date_time, user_id) 
 	VALUES (?, ?, ?, ?, ?)`
